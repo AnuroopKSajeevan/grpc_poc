@@ -1,0 +1,184 @@
+syntax = "proto3";
+
+package product;
+
+option java_multiple_files = true;
+option java_package = "com.aksgrpc.server.grpc";
+option java_outer_classname = "ProductProto";
+
+// Product Service with all four gRPC communication patterns
+service ProductService {
+
+  // ============================================
+  // UNARY RPC - Single request, single response
+  // ============================================
+
+  // Get a single product by ID
+  rpc GetProduct(GetProductRequest) returns (ProductResponse);
+
+  // Create a new product
+  rpc CreateProduct(CreateProductRequest) returns (ProductResponse);
+
+  // Update an existing product
+  rpc UpdateProduct(UpdateProductRequest) returns (ProductResponse);
+
+  // Delete a product
+  rpc DeleteProduct(DeleteProductRequest) returns (DeleteProductResponse);
+
+  // ============================================
+  // SERVER STREAMING RPC - Single request, stream of responses
+  // ============================================
+
+  // List all products (streams products one by one)
+  rpc ListProducts(ListProductsRequest) returns (stream ProductResponse);
+
+  // Search products by criteria (streams matching products)
+  rpc SearchProducts(SearchProductsRequest) returns (stream ProductResponse);
+
+  // ============================================
+  // CLIENT STREAMING RPC - Stream of requests, single response
+  // ============================================
+
+  // Bulk create products (client streams products, server returns summary)
+  rpc BulkCreateProducts(stream CreateProductRequest) returns (BulkCreateResponse);
+
+  // Calculate total value of products (client streams product IDs)
+  rpc CalculateTotalValue(stream ProductIdRequest) returns (TotalValueResponse);
+
+  // ============================================
+  // BI-DIRECTIONAL STREAMING RPC - Stream of requests and responses
+  // ============================================
+
+  // Real-time product updates (bi-directional streaming)
+  rpc ProductUpdates(stream ProductUpdateRequest) returns (stream ProductUpdateResponse);
+
+  // Product inventory sync (bi-directional streaming)
+  rpc InventorySync(stream InventorySyncRequest) returns (stream InventorySyncResponse);
+}
+
+// ==================== REQUEST MESSAGES ====================
+
+// Request to get a product by ID
+message GetProductRequest {
+  string id = 1;
+}
+
+// Request to create a new product
+message CreateProductRequest {
+  string name = 1;
+  string description = 2;
+  double price = 3;
+  int32 quantity = 4;
+  string category = 5;
+}
+
+// Request to update an existing product
+message UpdateProductRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  double price = 4;
+  int32 quantity = 5;
+  string category = 6;
+  bool active = 7;
+}
+
+// Request to delete a product
+message DeleteProductRequest {
+  string id = 1;
+}
+
+// Request to list products with optional filters
+message ListProductsRequest {
+  string category = 1;      // Optional: filter by category
+  bool active_only = 2;     // Optional: only active products
+  int32 page_size = 3;      // Optional: limit results
+}
+
+// Request to search products
+message SearchProductsRequest {
+  string query = 1;         // Search query (name contains)
+  double max_price = 2;     // Optional: maximum price filter
+  int32 min_quantity = 3;   // Optional: minimum quantity filter
+}
+
+// Request with just product ID
+message ProductIdRequest {
+  string id = 1;
+}
+
+// Request for real-time product updates
+message ProductUpdateRequest {
+  string request_id = 1;
+  oneof action {
+    CreateProductRequest create = 2;
+    UpdateProductRequest update = 3;
+    DeleteProductRequest delete = 4;
+    GetProductRequest get = 5;
+  }
+}
+
+// Request for inventory sync
+message InventorySyncRequest {
+  string product_id = 1;
+  int32 quantity_change = 2;  // Positive for add, negative for remove
+  string reason = 3;          // Reason for inventory change
+  int64 timestamp = 4;        // Client timestamp
+}
+
+// ==================== RESPONSE MESSAGES ====================
+
+// Standard product response
+message ProductResponse {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  double price = 4;
+  int32 quantity = 5;
+  string category = 6;
+  bool active = 7;
+  int64 created_at = 8;   // Unix timestamp
+  int64 updated_at = 9;   // Unix timestamp
+}
+
+// Response for delete operation
+message DeleteProductResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Response for bulk create operation
+message BulkCreateResponse {
+  int32 total_received = 1;
+  int32 total_created = 2;
+  int32 total_failed = 3;
+  repeated string created_ids = 4;
+  repeated string error_messages = 5;
+}
+
+// Response for total value calculation
+message TotalValueResponse {
+  int32 product_count = 1;
+  double total_value = 2;       // Sum of (price * quantity)
+  double average_price = 3;
+}
+
+// Response for real-time product updates
+message ProductUpdateResponse {
+  string request_id = 1;
+  bool success = 2;
+  string message = 3;
+  ProductResponse product = 4;  // Updated/created product data
+  int64 server_timestamp = 5;
+}
+
+// Response for inventory sync
+message InventorySyncResponse {
+  string product_id = 1;
+  int32 previous_quantity = 2;
+  int32 new_quantity = 3;
+  bool success = 4;
+  string message = 5;
+  int64 server_timestamp = 6;
+}
+
