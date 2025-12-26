@@ -18,8 +18,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +40,12 @@ class ProductServiceGrpcImplTest {
 
     @Mock
     private StreamObserver<DeleteProductResponse> deleteResponseObserver;
+
+    @Mock
+    private StreamObserver<ProductResponse> listResponseObserver;
+
+    @Mock
+    private StreamObserver<ProductResponse> searchResponseObserver;
 
     @InjectMocks
     private ProductServiceGrpcImpl grpcService;
@@ -116,7 +126,7 @@ class ProductServiceGrpcImplTest {
             verify(productResponseObserver, never()).onCompleted();
 
             Throwable error = errorCaptor.getValue();
-            assertTrue(error instanceof StatusException);
+            assertInstanceOf(StatusException.class, error);
             assertEquals(Status.INVALID_ARGUMENT.getCode(), ((StatusException) error).getStatus().getCode());
         }
 
@@ -134,7 +144,7 @@ class ProductServiceGrpcImplTest {
 
             verify(productResponseObserver).onError(errorCaptor.capture());
             Throwable error = errorCaptor.getValue();
-            assertTrue(error instanceof StatusException);
+            assertInstanceOf(StatusException.class, error);
             assertEquals(Status.NOT_FOUND.getCode(), ((StatusException) error).getStatus().getCode());
         }
     }
@@ -179,6 +189,7 @@ class ProductServiceGrpcImplTest {
             verify(productResponseObserver).onError(errorCaptor.capture());
             Throwable error = errorCaptor.getValue();
             assertEquals(Status.INVALID_ARGUMENT.getCode(), ((StatusException) error).getStatus().getCode());
+            assertNotNull(((StatusException) error).getStatus().getDescription());
             assertTrue(((StatusException) error).getStatus().getDescription().contains("name"));
         }
 
@@ -196,6 +207,7 @@ class ProductServiceGrpcImplTest {
             verify(productResponseObserver).onError(errorCaptor.capture());
             Throwable error = errorCaptor.getValue();
             assertEquals(Status.INVALID_ARGUMENT.getCode(), ((StatusException) error).getStatus().getCode());
+            assertNotNull(((StatusException) error).getStatus().getDescription());
             assertTrue(((StatusException) error).getStatus().getDescription().contains("price"));
         }
 
@@ -213,6 +225,7 @@ class ProductServiceGrpcImplTest {
             verify(productResponseObserver).onError(errorCaptor.capture());
             Throwable error = errorCaptor.getValue();
             assertEquals(Status.INVALID_ARGUMENT.getCode(), ((StatusException) error).getStatus().getCode());
+            assertNotNull(((StatusException) error).getStatus().getDescription());
             assertTrue(((StatusException) error).getStatus().getDescription().contains("quantity"));
         }
     }
@@ -327,6 +340,227 @@ class ProductServiceGrpcImplTest {
             verify(deleteResponseObserver).onError(errorCaptor.capture());
             Throwable error = errorCaptor.getValue();
             assertEquals(Status.NOT_FOUND.getCode(), ((StatusException) error).getStatus().getCode());
+        }
+    }
+
+    @Nested
+    @DisplayName("listProducts tests")
+    class ListProductsTests {
+
+        @Test
+        @DisplayName("Should list all products when no filters applied")
+        void listProducts_noFilters_streamsAllProducts() {
+            Product product1 = Product.builder()
+                    .id("id1")
+                    .name("Product 1")
+                    .price(99.99)
+                    .quantity(10)
+                    .category("Electronics")
+                    .active(true)
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+
+            when(productService.getAllProducts()).thenReturn(Collections.singletonList(product1));
+
+            ListProductsRequest request = ListProductsRequest.newBuilder().build();
+            grpcService.listProducts(request, listResponseObserver);
+
+            verify(listResponseObserver).onCompleted();
+        }
+
+        @Test
+        @DisplayName("Should filter products by category")
+        void listProducts_withCategory_streamsFilteredProducts() {
+            Product product = Product.builder()
+                    .id("id1")
+                    .name("Laptop")
+                    .price(999.99)
+                    .quantity(3)
+                    .category("Electronics")
+                    .active(true)
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+
+            when(productService.getProductsByCategory("Electronics")).thenReturn(Collections.singletonList(product));
+
+            ListProductsRequest request = ListProductsRequest.newBuilder()
+                    .setCategory("Electronics")
+                    .build();
+            grpcService.listProducts(request, listResponseObserver);
+
+            verify(listResponseObserver).onCompleted();
+        }
+
+        @Test
+        @DisplayName("Should filter products by active status")
+        void listProducts_activeOnly_streamsActiveProducts() {
+            Product product = Product.builder()
+                    .id("id1")
+                    .name("Active Product")
+                    .price(99.99)
+                    .quantity(10)
+                    .category("Test")
+                    .active(true)
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+
+            when(productService.getActiveProducts()).thenReturn(Collections.singletonList(product));
+
+            ListProductsRequest request = ListProductsRequest.newBuilder()
+                    .setActiveOnly(true)
+                    .build();
+            grpcService.listProducts(request, listResponseObserver);
+
+            verify(listResponseObserver).onCompleted();
+        }
+
+        @Test
+        @DisplayName("Should apply page size limit")
+        void listProducts_withPageSize_limitsResults() {
+            Product product1 = Product.builder()
+                    .id("id1")
+                    .name("Product 1")
+                    .price(99.99)
+                    .quantity(10)
+                    .category("Test")
+                    .active(true)
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+
+            Product product2 = Product.builder()
+                    .id("id2")
+                    .name("Product 2")
+                    .price(49.99)
+                    .quantity(5)
+                    .category("Test")
+                    .active(true)
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+
+            when(productService.getAllProducts()).thenReturn(Arrays.asList(product1, product2));
+
+            ListProductsRequest request = ListProductsRequest.newBuilder()
+                    .setPageSize(1)
+                    .build();
+            grpcService.listProducts(request, listResponseObserver);
+
+            verify(listResponseObserver).onCompleted();
+        }
+    }
+
+    @Nested
+    @DisplayName("searchProducts tests")
+    class SearchProductsTests {
+
+        @Test
+        @DisplayName("Should return error when query is empty")
+        void searchProducts_emptyQuery_returnsInvalidArgumentError() {
+            SearchProductsRequest request = SearchProductsRequest.newBuilder()
+                    .setName("")
+                    .build();
+
+            grpcService.searchProducts(request, searchResponseObserver);
+
+            verify(searchResponseObserver).onError(errorCaptor.capture());
+            Throwable error = errorCaptor.getValue();
+            assertInstanceOf(StatusException.class, error);
+            assertEquals(Status.INVALID_ARGUMENT.getCode(), ((StatusException) error).getStatus().getCode());
+        }
+
+        @Test
+        @DisplayName("Should search products by name")
+        void searchProducts_validQuery_streamsMatchingProducts() {
+            Product product = Product.builder()
+                    .id("id1")
+                    .name("MacBook Pro")
+                    .price(1999.99)
+                    .quantity(2)
+                    .category("Electronics")
+                    .active(true)
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+
+            when(productService.searchProducts(anyString(), anyDouble(), anyInt()))
+                    .thenReturn(Collections.singletonList(product));
+
+            SearchProductsRequest request = SearchProductsRequest.newBuilder()
+                    .setName("MacBook")
+                    .build();
+            grpcService.searchProducts(request, searchResponseObserver);
+
+            verify(searchResponseObserver).onCompleted();
+        }
+
+        @Test
+        @DisplayName("Should search products with price filter")
+        void searchProducts_withMaxPrice_streamsFilteredProducts() {
+            Product product = Product.builder()
+                    .id("id1")
+                    .name("Budget Laptop")
+                    .price(499.99)
+                    .quantity(10)
+                    .category("Electronics")
+                    .active(true)
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+
+            when(productService.searchProducts(anyString(), anyDouble(), anyInt()))
+                    .thenReturn(Collections.singletonList(product));
+
+            SearchProductsRequest request = SearchProductsRequest.newBuilder()
+                    .setName("Laptop")
+                    .setMaxPrice(1000.0)
+                    .build();
+            grpcService.searchProducts(request, searchResponseObserver);
+
+            verify(searchResponseObserver).onCompleted();
+        }
+
+        @Test
+        @DisplayName("Should search products with quantity filter")
+        void searchProducts_withMinQuantity_streamsFilteredProducts() {
+            Product product = Product.builder()
+                    .id("id1")
+                    .name("In Stock Product")
+                    .price(99.99)
+                    .quantity(20)
+                    .category("Test")
+                    .active(true)
+                    .createdAt(System.currentTimeMillis())
+                    .updatedAt(System.currentTimeMillis())
+                    .build();
+
+            when(productService.searchProducts(anyString(), anyDouble(), anyInt()))
+                    .thenReturn(Collections.singletonList(product));
+
+            SearchProductsRequest request = SearchProductsRequest.newBuilder()
+                    .setName("Product")
+                    .setMinQuantity(10)
+                    .build();
+            grpcService.searchProducts(request, searchResponseObserver);
+
+            verify(searchResponseObserver).onCompleted();
+        }
+
+        @Test
+        @DisplayName("Should return empty stream when no products match")
+        void searchProducts_noMatches_streamsNothing() {
+            when(productService.searchProducts(anyString(), anyDouble(), anyInt()))
+                    .thenReturn(new ArrayList<>());
+
+            SearchProductsRequest request = SearchProductsRequest.newBuilder()
+                    .setName("NonExistent")
+                    .build();
+            grpcService.searchProducts(request, searchResponseObserver);
+
+            verify(searchResponseObserver).onCompleted();
         }
     }
 }

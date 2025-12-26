@@ -97,7 +97,7 @@ message ListProductsRequest {
 
 // Request to search products
 message SearchProductsRequest {
-  string query = 1;         // Search query (name contains)
+  string name = 1;         // Search name (name contains)
   double max_price = 2;     // Optional: maximum price filter
   int32 min_quantity = 3;   // Optional: minimum quantity filter
 }

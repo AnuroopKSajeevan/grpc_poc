@@ -182,5 +182,105 @@ public class ProductServiceGrpcImpl extends ProductServiceGrpc.ProductServiceImp
                     .asException());
         }
     }
+
+    // ============================================
+    // SERVER STREAMING RPC IMPLEMENTATIONS
+    // ============================================
+
+    /**
+     * SERVER STREAMING RPC: List all products with optional filters
+     * Streams products one by one based on filters (category, active status, page size)
+     */
+    @Override
+    public void listProducts(ListProductsRequest request, StreamObserver<ProductResponse> responseObserver) {
+        try {
+            log.info("gRPC: ListProducts called with filters - category: {}, activeOnly: {}, pageSize: {}",
+                    request.getCategory(), request.getActiveOnly(), request.getPageSize());
+
+            java.util.List<Product> products;
+
+            // Apply filters based on request
+            if (!request.getCategory().isEmpty() && request.getActiveOnly()) {
+                // Filter by category and active status
+                products = productService.getActiveProductsByCategory(request.getCategory());
+            } else if (!request.getCategory().isEmpty()) {
+                // Filter by category only
+                products = productService.getProductsByCategory(request.getCategory());
+            } else if (request.getActiveOnly()) {
+                // Filter by active status only
+                products = productService.getActiveProducts();
+            } else {
+                // No filters, get all products
+                products = productService.getAllProducts();
+            }
+
+            // Apply page size limit if specified
+            if (request.getPageSize() > 0) {
+                products = products.stream()
+                        .limit(request.getPageSize())
+                        .toList();
+            }
+
+            // Stream each product as a response
+            int count = 0;
+            for (Product product : products) {
+                ProductResponse response = productMapper.toProductResponse(product);
+                responseObserver.onNext(response);
+                count++;
+            }
+
+            responseObserver.onCompleted();
+            log.info("gRPC: ListProducts completed successfully. Streamed {} products", count);
+
+        } catch (Exception e) {
+            log.error("gRPC: ListProducts failed with exception", e);
+            responseObserver.onError(Status.INTERNAL
+                    .withDescription("Internal server error: " + e.getMessage())
+                    .asException());
+        }
+    }
+
+    /**
+     * SERVER STREAMING RPC: Search products by criteria
+     * Streams matching products based on search query, max price, and min quantity filters
+     */
+    @Override
+    public void searchProducts(SearchProductsRequest request, StreamObserver<ProductResponse> responseObserver) {
+        try {
+            log.info("gRPC: SearchProducts called with name: {}, maxPrice: {}, minQuantity: {}",
+                    request.getName(), request.getMaxPrice(), request.getMinQuantity());
+
+            if (request.getName().isEmpty()) {
+                responseObserver.onError(Status.INVALID_ARGUMENT
+                        .withDescription("Search name cannot be empty")
+                        .asException());
+                return;
+            }
+
+            // Search products using service with all filters
+            java.util.List<Product> searchResults = productService.searchProducts(
+                    request.getName(),
+                    request.getMaxPrice(),
+                    request.getMinQuantity()
+            );
+
+            // Stream each matching product as a response
+            int count = 0;
+            for (Product product : searchResults) {
+                ProductResponse response = productMapper.toProductResponse(product);
+                responseObserver.onNext(response);
+                count++;
+            }
+
+            responseObserver.onCompleted();
+            log.info("gRPC: SearchProducts completed successfully. Found and streamed {} products", count);
+
+        } catch (Exception e) {
+            log.error("gRPC: SearchProducts failed with exception", e);
+            responseObserver.onError(Status.INTERNAL
+                    .withDescription("Internal server error: " + e.getMessage())
+                    .asException());
+        }
+    }
 }
 

@@ -65,5 +65,40 @@ public class ProductService {
         return productRepository.findByActiveTrue();
     }
 
+    public List<Product> getAllProducts() {
+        log.info("Fetching all products");
+        return productRepository.findAll();
+    }
+
+    public List<Product> getProductsByCategory(String category) {
+        log.info("Fetching products by category: {}", category);
+        return productRepository.findByCategory(category);
+    }
+
+    public List<Product> getActiveProductsByCategory(String category) {
+        log.info("Fetching active products by category: {}", category);
+        return productRepository.findByActiveTrueAndCategory(category);
+    }
+
+    public List<Product> searchProducts(String name, double maxPrice, int minQuantity) {
+        log.info("Searching products with name: {}, maxPrice: {}, minQuantity: {}", name, maxPrice, minQuantity);
+
+        if (maxPrice > 0 && minQuantity > 0) {
+            // Search by both price and quantity
+            List<Product> byPrice = productRepository.searchByNameAndMaxPrice(name, maxPrice);
+            return byPrice.stream()
+                    .filter(p -> p.getQuantity() >= minQuantity)
+                    .toList();
+        } else if (maxPrice > 0) {
+            // Search by price only
+            return productRepository.searchByNameAndMaxPrice(name, maxPrice);
+        } else if (minQuantity > 0) {
+            // Search by quantity only
+            return productRepository.searchByNameAndMinQuantity(name, minQuantity);
+        } else {
+            // Search by name only
+            return productRepository.findByNameContainingIgnoreCase(name);
+        }
+    }
 }
 
