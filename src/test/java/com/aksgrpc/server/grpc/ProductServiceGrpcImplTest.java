@@ -47,6 +47,12 @@ class ProductServiceGrpcImplTest {
     @Mock
     private StreamObserver<ProductResponse> searchResponseObserver;
 
+    @Mock
+    private StreamObserver<BulkCreateResponse> bulkCreateResponseObserver;
+
+    @Mock
+    private StreamObserver<TotalValueResponse> totalValueResponseObserver;
+
     @InjectMocks
     private ProductServiceGrpcImpl grpcService;
 
@@ -561,6 +567,233 @@ class ProductServiceGrpcImplTest {
             grpcService.searchProducts(request, searchResponseObserver);
 
             verify(searchResponseObserver).onCompleted();
+        }
+    }
+
+    @Nested
+    @DisplayName("bulkCreateProducts tests")
+    class BulkCreateProductsTests {
+
+        @Test
+        @DisplayName("Should successfully create multiple products")
+        void bulkCreateProducts_multipleValidRequests_createsAllProducts() {
+            when(productService.createProduct(any(Product.class))).thenAnswer(invocation -> {
+                Product product = invocation.getArgument(0);
+                product.setId("generated-id-" + System.nanoTime());
+                return product;
+            });
+            when(productMapper.createProductRequestToEntity(any())).thenAnswer(invocation -> {
+                CreateProductRequest req = invocation.getArgument(0);
+                return Product.builder()
+                        .name(req.getName())
+                        .description(req.getDescription())
+                        .price(req.getPrice())
+                        .quantity(req.getQuantity())
+                        .category(req.getCategory())
+                        .active(true)
+                        .createdAt(System.currentTimeMillis())
+                        .updatedAt(System.currentTimeMillis())
+                        .build();
+            });
+
+            ArgumentCaptor<BulkCreateResponse> responseCaptor = ArgumentCaptor.forClass(BulkCreateResponse.class);
+
+            StreamObserver<CreateProductRequest> requestObserver = grpcService.bulkCreateProducts(bulkCreateResponseObserver);
+
+            // Send 3 valid products
+            CreateProductRequest req1 = CreateProductRequest.newBuilder()
+                    .setName("Product 1")
+                    .setPrice(99.99)
+                    .setQuantity(10)
+                    .build();
+            CreateProductRequest req2 = CreateProductRequest.newBuilder()
+                    .setName("Product 2")
+                    .setPrice(149.99)
+                    .setQuantity(5)
+                    .build();
+            CreateProductRequest req3 = CreateProductRequest.newBuilder()
+                    .setName("Product 3")
+                    .setPrice(199.99)
+                    .setQuantity(8)
+                    .build();
+
+            requestObserver.onNext(req1);
+            requestObserver.onNext(req2);
+            requestObserver.onNext(req3);
+            requestObserver.onCompleted();
+
+            verify(bulkCreateResponseObserver).onNext(responseCaptor.capture());
+            verify(bulkCreateResponseObserver).onCompleted();
+
+            BulkCreateResponse response = responseCaptor.getValue();
+            assertEquals(3, response.getTotalReceived());
+            assertEquals(3, response.getTotalCreated());
+            assertEquals(0, response.getTotalFailed());
+        }
+
+        @Test
+        @DisplayName("Should handle invalid products in bulk create")
+        void bulkCreateProducts_invalidRequests_reportErrors() {
+            when(productService.createProduct(any(Product.class))).thenAnswer(invocation -> {
+                Product product = invocation.getArgument(0);
+                product.setId("generated-id-" + System.nanoTime());
+                return product;
+            });
+            when(productMapper.createProductRequestToEntity(any())).thenAnswer(invocation -> {
+                CreateProductRequest req = invocation.getArgument(0);
+                return Product.builder()
+                        .name(req.getName())
+                        .description(req.getDescription())
+                        .price(req.getPrice())
+                        .quantity(req.getQuantity())
+                        .category(req.getCategory())
+                        .active(true)
+                        .createdAt(System.currentTimeMillis())
+                        .updatedAt(System.currentTimeMillis())
+                        .build();
+            });
+
+            ArgumentCaptor<BulkCreateResponse> responseCaptor = ArgumentCaptor.forClass(BulkCreateResponse.class);
+
+            StreamObserver<CreateProductRequest> requestObserver = grpcService.bulkCreateProducts(bulkCreateResponseObserver);
+
+            // Send 1 valid and 2 invalid products
+            CreateProductRequest validReq = CreateProductRequest.newBuilder()
+                    .setName("Valid Product")
+                    .setPrice(99.99)
+                    .setQuantity(10)
+                    .build();
+
+            CreateProductRequest invalidReq1 = CreateProductRequest.newBuilder()
+                    .setName("")
+                    .setPrice(99.99)
+                    .setQuantity(10)
+                    .build();
+
+            CreateProductRequest invalidReq2 = CreateProductRequest.newBuilder()
+                    .setName("Invalid Price")
+                    .setPrice(0)
+                    .setQuantity(10)
+                    .build();
+
+            requestObserver.onNext(validReq);
+            requestObserver.onNext(invalidReq1);
+            requestObserver.onNext(invalidReq2);
+            requestObserver.onCompleted();
+
+            verify(bulkCreateResponseObserver).onNext(responseCaptor.capture());
+            verify(bulkCreateResponseObserver).onCompleted();
+
+            BulkCreateResponse response = responseCaptor.getValue();
+            assertEquals(3, response.getTotalReceived());
+            assertEquals(1, response.getTotalCreated());
+            assertEquals(2, response.getTotalFailed());
+            assertEquals(2, response.getErrorMessagesList().size());
+        }
+    }
+
+    @Nested
+    @DisplayName("calculateTotalValue tests")
+    class CalculateTotalValueTests {
+
+        @Test
+        @DisplayName("Should calculate total value for multiple products")
+        void calculateTotalValue_multipleProductIds_returnsTotalValue() {
+            Product product1 = Product.builder()
+                    .id("id1")
+                    .name("Product 1")
+                    .price(100.0)
+                    .quantity(2)
+                    .active(true)
+                    .build();
+
+            Product product2 = Product.builder()
+                    .id("id2")
+                    .name("Product 2")
+                    .price(50.0)
+                    .quantity(3)
+                    .active(true)
+                    .build();
+
+            when(productService.getProductById("id1")).thenReturn(product1);
+            when(productService.getProductById("id2")).thenReturn(product2);
+
+            ArgumentCaptor<TotalValueResponse> responseCaptor = ArgumentCaptor.forClass(TotalValueResponse.class);
+
+            StreamObserver<ProductIdRequest> requestObserver = grpcService.calculateTotalValue(totalValueResponseObserver);
+
+            ProductIdRequest req1 = ProductIdRequest.newBuilder().setId("id1").build();
+            ProductIdRequest req2 = ProductIdRequest.newBuilder().setId("id2").build();
+
+            requestObserver.onNext(req1);
+            requestObserver.onNext(req2);
+            requestObserver.onCompleted();
+
+            verify(totalValueResponseObserver).onNext(responseCaptor.capture());
+            verify(totalValueResponseObserver).onCompleted();
+
+            TotalValueResponse response = responseCaptor.getValue();
+            assertEquals(2, response.getProductCount());
+            // Total value = (100 * 2) + (50 * 3) = 200 + 150 = 350
+            assertEquals(350.0, response.getTotalValue(), 0.01);
+            // Average = 350 / 2 = 175
+            assertEquals(175.0, response.getAveragePrice(), 0.01);
+        }
+
+        @Test
+        @DisplayName("Should handle missing products gracefully")
+        void calculateTotalValue_missingProducts_continuesProcessing() {
+            Product product1 = Product.builder()
+                    .id("id1")
+                    .name("Product 1")
+                    .price(100.0)
+                    .quantity(2)
+                    .active(true)
+                    .build();
+
+            when(productService.getProductById("id1")).thenReturn(product1);
+            when(productService.getProductById("non-existent")).thenThrow(new ProductNotFoundException("non-existent"));
+
+            ArgumentCaptor<TotalValueResponse> responseCaptor = ArgumentCaptor.forClass(TotalValueResponse.class);
+
+            StreamObserver<ProductIdRequest> requestObserver = grpcService.calculateTotalValue(totalValueResponseObserver);
+
+            ProductIdRequest req1 = ProductIdRequest.newBuilder().setId("id1").build();
+            ProductIdRequest req2 = ProductIdRequest.newBuilder().setId("non-existent").build();
+
+            requestObserver.onNext(req1);
+            requestObserver.onNext(req2);
+            requestObserver.onCompleted();
+
+            verify(totalValueResponseObserver).onNext(responseCaptor.capture());
+            verify(totalValueResponseObserver).onCompleted();
+
+            TotalValueResponse response = responseCaptor.getValue();
+            // Only 1 product found (the non-existent one is skipped)
+            assertEquals(1, response.getProductCount());
+            assertEquals(200.0, response.getTotalValue(), 0.01);
+        }
+
+        @Test
+        @DisplayName("Should return zero values when no products found")
+        void calculateTotalValue_noProductsFound_returnsZeroes() {
+            when(productService.getProductById(anyString())).thenThrow(new ProductNotFoundException("any"));
+
+            ArgumentCaptor<TotalValueResponse> responseCaptor = ArgumentCaptor.forClass(TotalValueResponse.class);
+
+            StreamObserver<ProductIdRequest> requestObserver = grpcService.calculateTotalValue(totalValueResponseObserver);
+
+            ProductIdRequest req = ProductIdRequest.newBuilder().setId("non-existent").build();
+            requestObserver.onNext(req);
+            requestObserver.onCompleted();
+
+            verify(totalValueResponseObserver).onNext(responseCaptor.capture());
+            verify(totalValueResponseObserver).onCompleted();
+
+            TotalValueResponse response = responseCaptor.getValue();
+            assertEquals(0, response.getProductCount());
+            assertEquals(0.0, response.getTotalValue(), 0.01);
+            assertEquals(0.0, response.getAveragePrice(), 0.01);
         }
     }
 }

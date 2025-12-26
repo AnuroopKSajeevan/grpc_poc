@@ -282,5 +282,178 @@ public class ProductServiceGrpcImpl extends ProductServiceGrpc.ProductServiceImp
                     .asException());
         }
     }
+
+    // ============================================
+    // CLIENT STREAMING RPC IMPLEMENTATIONS
+    // ============================================
+
+    /**
+     * CLIENT STREAMING RPC: Bulk create products
+     * Client streams multiple CreateProductRequest messages, server returns BulkCreateResponse with summary
+     */
+    @Override
+    public StreamObserver<CreateProductRequest> bulkCreateProducts(
+            StreamObserver<BulkCreateResponse> responseObserver) {
+
+        return new StreamObserver<>() {
+            private final java.util.List<String> createdIds = new java.util.ArrayList<>();
+            private final java.util.List<String> errorMessages = new java.util.ArrayList<>();
+            private int totalReceived = 0;
+
+            @Override
+            public void onNext(CreateProductRequest request) {
+                try {
+                    totalReceived++;
+                    log.debug("gRPC: BulkCreateProducts received request #{} - product: {}",
+                            totalReceived, request.getName());
+
+                    // Validate request
+                    if (request.getName().isEmpty()) {
+                        errorMessages.add("Request #" + totalReceived + ": Product name cannot be empty");
+                        return;
+                    }
+
+                    if (request.getPrice() <= 0) {
+                        errorMessages.add("Request #" + totalReceived + ": Product price must be greater than 0");
+                        return;
+                    }
+
+                    if (request.getQuantity() < 0) {
+                        errorMessages.add("Request #" + totalReceived + ": Product quantity cannot be negative");
+                        return;
+                    }
+
+                    // Map and create product
+                    Product product = productMapper.createProductRequestToEntity(request);
+                    Product savedProduct = productService.createProduct(product);
+                    createdIds.add(savedProduct.getId());
+
+                    log.debug("gRPC: BulkCreateProducts successfully created product with id: {}",
+                            savedProduct.getId());
+
+                } catch (Exception e) {
+                    log.error("gRPC: BulkCreateProducts error processing request #{}", totalReceived, e);
+                    errorMessages.add("Request #" + totalReceived + ": " + e.getMessage());
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                log.error("gRPC: BulkCreateProducts stream error", t);
+                responseObserver.onError(Status.INTERNAL
+                        .withDescription("Error in client stream: " + t.getMessage())
+                        .asException());
+            }
+
+            @Override
+            public void onCompleted() {
+                try {
+                    log.info("gRPC: BulkCreateProducts stream completed. Total received: {}, Created: {}, Failed: {}",
+                            totalReceived, createdIds.size(), errorMessages.size());
+
+                    BulkCreateResponse response = BulkCreateResponse.newBuilder()
+                            .setTotalReceived(totalReceived)
+                            .setTotalCreated(createdIds.size())
+                            .setTotalFailed(errorMessages.size())
+                            .addAllCreatedIds(createdIds)
+                            .addAllErrorMessages(errorMessages)
+                            .build();
+
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+
+                } catch (Exception e) {
+                    log.error("gRPC: BulkCreateProducts failed to send response", e);
+                    responseObserver.onError(Status.INTERNAL
+                            .withDescription("Internal server error: " + e.getMessage())
+                            .asException());
+                }
+            }
+        };
+    }
+
+    /**
+     * CLIENT STREAMING RPC: Calculate total value of products
+     * Client streams ProductIdRequest messages, server returns TotalValueResponse with calculated values
+     */
+    @Override
+    public StreamObserver<ProductIdRequest> calculateTotalValue(
+            StreamObserver<TotalValueResponse> responseObserver) {
+
+        return new StreamObserver<>() {
+            private final java.util.List<Product> products = new java.util.ArrayList<>();
+            private int totalRequested = 0;
+            private int totalFound = 0;
+
+            @Override
+            public void onNext(ProductIdRequest request) {
+                try {
+                    totalRequested++;
+                    log.debug("gRPC: CalculateTotalValue received request #{} - product id: {}",
+                            totalRequested, request.getId());
+
+                    if (request.getId().isEmpty()) {
+                        log.warn("gRPC: CalculateTotalValue request #{} has empty product ID", totalRequested);
+                        return;
+                    }
+
+                    try {
+                        Product product = productService.getProductById(request.getId());
+                        products.add(product);
+                        totalFound++;
+                        log.debug("gRPC: CalculateTotalValue found product: {} with value: {}",
+                                product.getName(), product.getPrice() * product.getQuantity());
+
+                    } catch (Exception e) {
+                        log.warn("gRPC: CalculateTotalValue product not found for id: {}", request.getId());
+                        // Continue processing other products instead of failing
+                    }
+
+                } catch (Exception e) {
+                    log.error("gRPC: CalculateTotalValue error processing request #{}", totalRequested, e);
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                log.error("gRPC: CalculateTotalValue stream error", t);
+                responseObserver.onError(Status.INTERNAL
+                        .withDescription("Error in client stream: " + t.getMessage())
+                        .asException());
+            }
+
+            @Override
+            public void onCompleted() {
+                try {
+                    // Calculate totals
+                    double totalValue = 0.0;
+                    for (Product product : products) {
+                        totalValue += product.getPrice() * product.getQuantity();
+                    }
+
+                    double averagePrice = products.isEmpty() ? 0.0 : totalValue / products.size();
+
+                    log.info("gRPC: CalculateTotalValue stream completed. Total requested: {}, Found: {}, " +
+                            "Total value: ${}, Average price: ${}",
+                            totalRequested, totalFound, totalValue, averagePrice);
+
+                    TotalValueResponse response = TotalValueResponse.newBuilder()
+                            .setProductCount(totalFound)
+                            .setTotalValue(totalValue)
+                            .setAveragePrice(averagePrice)
+                            .build();
+
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+
+                } catch (Exception e) {
+                    log.error("gRPC: CalculateTotalValue failed to send response", e);
+                    responseObserver.onError(Status.INTERNAL
+                            .withDescription("Internal server error: " + e.getMessage())
+                            .asException());
+                }
+            }
+        };
+    }
 }
 
