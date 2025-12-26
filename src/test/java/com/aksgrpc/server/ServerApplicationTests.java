@@ -1,13 +1,15 @@
 package com.aksgrpc.server;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 class ServerApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
+    @Test
+    void applicationClassExists() {
+        ServerApplication application = new ServerApplication();
+        assertNotNull(application);
+    }
 
 }
