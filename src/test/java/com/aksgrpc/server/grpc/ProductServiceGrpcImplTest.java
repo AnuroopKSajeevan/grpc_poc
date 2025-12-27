@@ -53,6 +53,12 @@ class ProductServiceGrpcImplTest {
     @Mock
     private StreamObserver<TotalValueResponse> totalValueResponseObserver;
 
+    @Mock
+    private StreamObserver<ProductUpdateResponse> productUpdateResponseObserver;
+
+    @Mock
+    private StreamObserver<InventorySyncResponse> inventorySyncResponseObserver;
+
     @InjectMocks
     private ProductServiceGrpcImpl grpcService;
 
@@ -794,6 +800,343 @@ class ProductServiceGrpcImplTest {
             assertEquals(0, response.getProductCount());
             assertEquals(0.0, response.getTotalValue(), 0.01);
             assertEquals(0.0, response.getAveragePrice(), 0.01);
+        }
+    }
+
+    @Nested
+    @DisplayName("productUpdates tests")
+    class ProductUpdatesTests {
+
+        @BeforeEach
+        void resetMocks() {
+            reset(productUpdateResponseObserver);
+        }
+
+        @Test
+        @DisplayName("Should handle CREATE action in ProductUpdates")
+        void productUpdates_createAction_createsProduct() {
+            when(productService.createProduct(any(Product.class))).thenAnswer(invocation -> {
+                Product product = invocation.getArgument(0);
+                product.setId("generated-id-" + System.nanoTime());
+                return product;
+            });
+            when(productMapper.createProductRequestToEntity(any())).thenAnswer(invocation -> {
+                CreateProductRequest req = invocation.getArgument(0);
+                return Product.builder()
+                        .name(req.getName())
+                        .description(req.getDescription())
+                        .price(req.getPrice())
+                        .quantity(req.getQuantity())
+                        .category(req.getCategory())
+                        .active(true)
+                        .createdAt(System.currentTimeMillis())
+                        .updatedAt(System.currentTimeMillis())
+                        .build();
+            });
+            when(productMapper.toProductResponse(any(Product.class))).thenReturn(
+                    ProductResponse.newBuilder()
+                            .setId("generated-id")
+                            .setName("Test Product")
+                            .setPrice(99.99)
+                            .setQuantity(5)
+                            .build()
+            );
+
+            ArgumentCaptor<ProductUpdateResponse> responseCaptor = ArgumentCaptor.forClass(ProductUpdateResponse.class);
+
+            StreamObserver<ProductUpdateRequest> requestObserver = grpcService.productUpdates(productUpdateResponseObserver);
+
+            CreateProductRequest createReq = CreateProductRequest.newBuilder()
+                    .setName("Test Product")
+                    .setPrice(99.99)
+                    .setQuantity(5)
+                    .build();
+
+            ProductUpdateRequest updateReq = ProductUpdateRequest.newBuilder()
+                    .setRequestId("req-1")
+                    .setCreate(createReq)
+                    .build();
+
+            requestObserver.onNext(updateReq);
+            requestObserver.onCompleted();
+
+            verify(productUpdateResponseObserver, times(1)).onNext(responseCaptor.capture());
+            verify(productUpdateResponseObserver).onCompleted();
+
+            ProductUpdateResponse response = responseCaptor.getValue();
+            assertEquals("req-1", response.getRequestId());
+            assertTrue(response.getSuccess());
+        }
+
+        @Test
+        @DisplayName("Should handle GET action in ProductUpdates")
+        void productUpdates_getAction_retrievesProduct() {
+            Product product = Product.builder()
+                    .id("prod-1")
+                    .name("Test Product")
+                    .price(99.99)
+                    .quantity(5)
+                    .active(true)
+                    .build();
+
+            when(productService.getProductById("prod-1")).thenReturn(product);
+            when(productMapper.toProductResponse(product)).thenReturn(ProductResponse.newBuilder()
+                    .setId("prod-1")
+                    .setName("Test Product")
+                    .setPrice(99.99)
+                    .setQuantity(5)
+                    .build());
+
+            ArgumentCaptor<ProductUpdateResponse> responseCaptor = ArgumentCaptor.forClass(ProductUpdateResponse.class);
+
+            StreamObserver<ProductUpdateRequest> requestObserver = grpcService.productUpdates(productUpdateResponseObserver);
+
+            GetProductRequest getReq = GetProductRequest.newBuilder()
+                    .setId("prod-1")
+                    .build();
+
+            ProductUpdateRequest updateReq = ProductUpdateRequest.newBuilder()
+                    .setRequestId("req-2")
+                    .setGet(getReq)
+                    .build();
+
+            requestObserver.onNext(updateReq);
+            requestObserver.onCompleted();
+
+            verify(productUpdateResponseObserver, times(1)).onNext(responseCaptor.capture());
+            verify(productUpdateResponseObserver).onCompleted();
+
+            ProductUpdateResponse response = responseCaptor.getValue();
+            assertEquals("req-2", response.getRequestId());
+            assertTrue(response.getSuccess());
+            assertTrue(response.hasProduct());
+        }
+
+        @Test
+        @DisplayName("Should handle DELETE action in ProductUpdates")
+        void productUpdates_deleteAction_deletesProduct() {
+            when(productService.deleteProduct("prod-1")).thenReturn(true);
+
+            ArgumentCaptor<ProductUpdateResponse> responseCaptor = ArgumentCaptor.forClass(ProductUpdateResponse.class);
+
+            StreamObserver<ProductUpdateRequest> requestObserver = grpcService.productUpdates(productUpdateResponseObserver);
+
+            DeleteProductRequest deleteReq = DeleteProductRequest.newBuilder()
+                    .setId("prod-1")
+                    .build();
+
+            ProductUpdateRequest updateReq = ProductUpdateRequest.newBuilder()
+                    .setRequestId("req-3")
+                    .setDelete(deleteReq)
+                    .build();
+
+            requestObserver.onNext(updateReq);
+            requestObserver.onCompleted();
+
+            verify(productUpdateResponseObserver, times(1)).onNext(responseCaptor.capture());
+            verify(productUpdateResponseObserver).onCompleted();
+
+            ProductUpdateResponse response = responseCaptor.getValue();
+            assertEquals("req-3", response.getRequestId());
+            assertTrue(response.getSuccess());
+        }
+
+        @Test
+        @DisplayName("Should handle UPDATE action in ProductUpdates")
+        void productUpdates_updateAction_updatesProduct() {
+            Product product = Product.builder()
+                    .id("prod-1")
+                    .name("Original Name")
+                    .price(99.99)
+                    .quantity(5)
+                    .active(true)
+                    .build();
+
+            when(productService.getProductById("prod-1")).thenReturn(product);
+            when(productService.createProduct(any(Product.class))).thenReturn(product);
+            when(productMapper.toProductResponse(product)).thenReturn(ProductResponse.newBuilder()
+                    .setId("prod-1")
+                    .setName("Original Name")
+                    .build());
+
+            ArgumentCaptor<ProductUpdateResponse> responseCaptor = ArgumentCaptor.forClass(ProductUpdateResponse.class);
+
+            StreamObserver<ProductUpdateRequest> requestObserver = grpcService.productUpdates(productUpdateResponseObserver);
+
+            UpdateProductRequest updateProdReq = UpdateProductRequest.newBuilder()
+                    .setId("prod-1")
+                    .setName("Updated Name")
+                    .build();
+
+            ProductUpdateRequest updateReq = ProductUpdateRequest.newBuilder()
+                    .setRequestId("req-4")
+                    .setUpdate(updateProdReq)
+                    .build();
+
+            requestObserver.onNext(updateReq);
+            requestObserver.onCompleted();
+
+            verify(productUpdateResponseObserver, times(1)).onNext(responseCaptor.capture());
+            verify(productUpdateResponseObserver).onCompleted();
+
+            ProductUpdateResponse response = responseCaptor.getValue();
+            assertEquals("req-4", response.getRequestId());
+            assertTrue(response.getSuccess());
+        }
+    }
+
+    @Nested
+    @DisplayName("inventorySync tests")
+    class InventorySyncTests {
+
+        @BeforeEach
+        void resetMocks() {
+            reset(inventorySyncResponseObserver);
+        }
+
+        @Test
+        @DisplayName("Should increase inventory successfully")
+        void inventorySync_increaseQuantity_succeeds() {
+            Product product = Product.builder()
+                    .id("prod-1")
+                    .name("Test Product")
+                    .price(99.99)
+                    .quantity(10)
+                    .active(true)
+                    .build();
+
+            when(productService.getProductById("prod-1")).thenReturn(product);
+            when(productService.createProduct(any(Product.class))).thenAnswer(invocation -> {
+                Product p = invocation.getArgument(0);
+                return p;
+            });
+
+            ArgumentCaptor<InventorySyncResponse> responseCaptor = ArgumentCaptor.forClass(InventorySyncResponse.class);
+
+            StreamObserver<InventorySyncRequest> requestObserver = grpcService.inventorySync(inventorySyncResponseObserver);
+
+            InventorySyncRequest request = InventorySyncRequest.newBuilder()
+                    .setProductId("prod-1")
+                    .setQuantityChange(5)
+                    .setReason("Replenishment")
+                    .setTimestamp(System.currentTimeMillis())
+                    .build();
+
+            requestObserver.onNext(request);
+            requestObserver.onCompleted();
+
+            verify(inventorySyncResponseObserver, times(1)).onNext(responseCaptor.capture());
+            verify(inventorySyncResponseObserver).onCompleted();
+
+            InventorySyncResponse response = responseCaptor.getValue();
+            assertEquals("prod-1", response.getProductId());
+            assertTrue(response.getSuccess());
+            assertEquals(10, response.getPreviousQuantity());
+            assertEquals(15, response.getNewQuantity());
+        }
+
+        @Test
+        @DisplayName("Should decrease inventory successfully")
+        void inventorySync_decreaseQuantity_succeeds() {
+            Product product = Product.builder()
+                    .id("prod-1")
+                    .name("Test Product")
+                    .price(99.99)
+                    .quantity(10)
+                    .active(true)
+                    .build();
+
+            when(productService.getProductById("prod-1")).thenReturn(product);
+            when(productService.createProduct(any(Product.class))).thenAnswer(invocation -> {
+                Product p = invocation.getArgument(0);
+                return p;
+            });
+
+            ArgumentCaptor<InventorySyncResponse> responseCaptor = ArgumentCaptor.forClass(InventorySyncResponse.class);
+
+            StreamObserver<InventorySyncRequest> requestObserver = grpcService.inventorySync(inventorySyncResponseObserver);
+
+            InventorySyncRequest request = InventorySyncRequest.newBuilder()
+                    .setProductId("prod-1")
+                    .setQuantityChange(-3)
+                    .setReason("Sale")
+                    .setTimestamp(System.currentTimeMillis())
+                    .build();
+
+            requestObserver.onNext(request);
+            requestObserver.onCompleted();
+
+            verify(inventorySyncResponseObserver, times(1)).onNext(responseCaptor.capture());
+            verify(inventorySyncResponseObserver).onCompleted();
+
+            InventorySyncResponse response = responseCaptor.getValue();
+            assertEquals("prod-1", response.getProductId());
+            assertTrue(response.getSuccess());
+            assertEquals(10, response.getPreviousQuantity());
+            assertEquals(7, response.getNewQuantity());
+        }
+
+        @Test
+        @DisplayName("Should fail when quantity would be negative")
+        void inventorySync_negativeQuantity_fails() {
+            Product product = Product.builder()
+                    .id("prod-1")
+                    .name("Test Product")
+                    .price(99.99)
+                    .quantity(5)
+                    .active(true)
+                    .build();
+
+            when(productService.getProductById("prod-1")).thenReturn(product);
+
+            ArgumentCaptor<InventorySyncResponse> responseCaptor = ArgumentCaptor.forClass(InventorySyncResponse.class);
+
+            StreamObserver<InventorySyncRequest> requestObserver = grpcService.inventorySync(inventorySyncResponseObserver);
+
+            InventorySyncRequest request = InventorySyncRequest.newBuilder()
+                    .setProductId("prod-1")
+                    .setQuantityChange(-10)  // Would result in -5
+                    .setReason("Invalid operation")
+                    .setTimestamp(System.currentTimeMillis())
+                    .build();
+
+            requestObserver.onNext(request);
+            requestObserver.onCompleted();
+
+            verify(inventorySyncResponseObserver, times(1)).onNext(responseCaptor.capture());
+            verify(inventorySyncResponseObserver).onCompleted();
+
+            InventorySyncResponse response = responseCaptor.getValue();
+            assertFalse(response.getSuccess());
+            assertEquals(5, response.getPreviousQuantity());
+            assertTrue(response.getMessage().contains("negative"));
+        }
+
+        @Test
+        @DisplayName("Should handle product not found in inventory sync")
+        void inventorySync_productNotFound_fails() {
+            when(productService.getProductById("nonexistent")).thenThrow(new ProductNotFoundException("nonexistent"));
+
+            ArgumentCaptor<InventorySyncResponse> responseCaptor = ArgumentCaptor.forClass(InventorySyncResponse.class);
+
+            StreamObserver<InventorySyncRequest> requestObserver = grpcService.inventorySync(inventorySyncResponseObserver);
+
+            InventorySyncRequest request = InventorySyncRequest.newBuilder()
+                    .setProductId("nonexistent")
+                    .setQuantityChange(5)
+                    .setReason("Update")
+                    .setTimestamp(System.currentTimeMillis())
+                    .build();
+
+            requestObserver.onNext(request);
+            requestObserver.onCompleted();
+
+            verify(inventorySyncResponseObserver, times(1)).onNext(responseCaptor.capture());
+            verify(inventorySyncResponseObserver).onCompleted();
+
+            InventorySyncResponse response = responseCaptor.getValue();
+            assertFalse(response.getSuccess());
+            assertTrue(response.getMessage().contains("not found"));
         }
     }
 }

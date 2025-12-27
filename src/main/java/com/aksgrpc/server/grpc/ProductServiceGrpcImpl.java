@@ -455,5 +455,366 @@ public class ProductServiceGrpcImpl extends ProductServiceGrpc.ProductServiceImp
             }
         };
     }
+
+    // ============================================
+    // BI-DIRECTIONAL STREAMING RPC IMPLEMENTATIONS
+    // ============================================
+
+    /**
+     * BI-DIRECTIONAL STREAMING RPC: Product Updates
+     * Client and server both stream messages
+     * Client sends ProductUpdateRequest (create, update, delete, get operations)
+     * Server responds with ProductUpdateResponse for each request
+     */
+    @Override
+    public StreamObserver<ProductUpdateRequest> productUpdates(
+            StreamObserver<ProductUpdateResponse> responseObserver) {
+
+        return new StreamObserver<ProductUpdateRequest>() {
+            private int requestCount = 0;
+
+            @Override
+            public void onNext(ProductUpdateRequest request) {
+                try {
+                    requestCount++;
+                    log.info("gRPC: ProductUpdates received request #{} with id: {}",
+                            requestCount, request.getRequestId());
+
+                    if (request.getRequestId().isEmpty()) {
+                        ProductUpdateResponse response = ProductUpdateResponse.newBuilder()
+                                .setRequestId("unknown-" + requestCount)
+                                .setSuccess(false)
+                                .setMessage("Request ID cannot be empty")
+                                .setServerTimestamp(System.currentTimeMillis())
+                                .build();
+                        responseObserver.onNext(response);
+                        return;
+                    }
+
+                    ProductUpdateResponse response = null;
+
+                    // Handle different action types
+                    if (request.hasCreate()) {
+                        // Handle create action
+                        CreateProductRequest createReq = request.getCreate();
+                        log.debug("gRPC: ProductUpdates - CREATE action for request: {}", request.getRequestId());
+
+                        if (createReq.getName().isEmpty()) {
+                            response = ProductUpdateResponse.newBuilder()
+                                    .setRequestId(request.getRequestId())
+                                    .setSuccess(false)
+                                    .setMessage("Product name cannot be empty")
+                                    .setServerTimestamp(System.currentTimeMillis())
+                                    .build();
+                        } else if (createReq.getPrice() <= 0) {
+                            response = ProductUpdateResponse.newBuilder()
+                                    .setRequestId(request.getRequestId())
+                                    .setSuccess(false)
+                                    .setMessage("Product price must be greater than 0")
+                                    .setServerTimestamp(System.currentTimeMillis())
+                                    .build();
+                        } else {
+                            try {
+                                Product product = productMapper.createProductRequestToEntity(createReq);
+                                Product savedProduct = productService.createProduct(product);
+                                ProductResponse productResp = productMapper.toProductResponse(savedProduct);
+
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(true)
+                                        .setMessage("Product created successfully")
+                                        .setProduct(productResp)
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                                log.debug("gRPC: ProductUpdates - Created product: {}", savedProduct.getId());
+                            } catch (Exception e) {
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(false)
+                                        .setMessage("Error creating product: " + e.getMessage())
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                            }
+                        }
+                    } else if (request.hasUpdate()) {
+                        // Handle update action
+                        UpdateProductRequest updateReq = request.getUpdate();
+                        log.debug("gRPC: ProductUpdates - UPDATE action for product: {}", updateReq.getId());
+
+                        if (updateReq.getId().isEmpty()) {
+                            response = ProductUpdateResponse.newBuilder()
+                                    .setRequestId(request.getRequestId())
+                                    .setSuccess(false)
+                                    .setMessage("Product ID cannot be empty")
+                                    .setServerTimestamp(System.currentTimeMillis())
+                                    .build();
+                        } else {
+                            try {
+                                Product product = productService.getProductById(updateReq.getId());
+                                productMapper.updateProductFromRequest(updateReq, product);
+                                Product updatedProduct = productService.createProduct(product);
+                                ProductResponse productResp = productMapper.toProductResponse(updatedProduct);
+
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(true)
+                                        .setMessage("Product updated successfully")
+                                        .setProduct(productResp)
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                                log.debug("gRPC: ProductUpdates - Updated product: {}", updateReq.getId());
+                            } catch (ProductNotFoundException e) {
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(false)
+                                        .setMessage("Product not found: " + e.getMessage())
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                            } catch (Exception e) {
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(false)
+                                        .setMessage("Error updating product: " + e.getMessage())
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                            }
+                        }
+                    } else if (request.hasDelete()) {
+                        // Handle delete action
+                        DeleteProductRequest deleteReq = request.getDelete();
+                        log.debug("gRPC: ProductUpdates - DELETE action for product: {}", deleteReq.getId());
+
+                        if (deleteReq.getId().isEmpty()) {
+                            response = ProductUpdateResponse.newBuilder()
+                                    .setRequestId(request.getRequestId())
+                                    .setSuccess(false)
+                                    .setMessage("Product ID cannot be empty")
+                                    .setServerTimestamp(System.currentTimeMillis())
+                                    .build();
+                        } else {
+                            try {
+                                productService.deleteProduct(deleteReq.getId());
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(true)
+                                        .setMessage("Product deleted successfully")
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                                log.debug("gRPC: ProductUpdates - Deleted product: {}", deleteReq.getId());
+                            } catch (ProductNotFoundException e) {
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(false)
+                                        .setMessage("Product not found: " + e.getMessage())
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                            } catch (Exception e) {
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(false)
+                                        .setMessage("Error deleting product: " + e.getMessage())
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                            }
+                        }
+                    } else if (request.hasGet()) {
+                        // Handle get action
+                        GetProductRequest getReq = request.getGet();
+                        log.debug("gRPC: ProductUpdates - GET action for product: {}", getReq.getId());
+
+                        if (getReq.getId().isEmpty()) {
+                            response = ProductUpdateResponse.newBuilder()
+                                    .setRequestId(request.getRequestId())
+                                    .setSuccess(false)
+                                    .setMessage("Product ID cannot be empty")
+                                    .setServerTimestamp(System.currentTimeMillis())
+                                    .build();
+                        } else {
+                            try {
+                                Product product = productService.getProductById(getReq.getId());
+                                ProductResponse productResp = productMapper.toProductResponse(product);
+
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(true)
+                                        .setMessage("Product retrieved successfully")
+                                        .setProduct(productResp)
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                                log.debug("gRPC: ProductUpdates - Retrieved product: {}", getReq.getId());
+                            } catch (ProductNotFoundException e) {
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(false)
+                                        .setMessage("Product not found: " + e.getMessage())
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                            } catch (Exception e) {
+                                response = ProductUpdateResponse.newBuilder()
+                                        .setRequestId(request.getRequestId())
+                                        .setSuccess(false)
+                                        .setMessage("Error retrieving product: " + e.getMessage())
+                                        .setServerTimestamp(System.currentTimeMillis())
+                                        .build();
+                            }
+                        }
+                    } else {
+                        response = ProductUpdateResponse.newBuilder()
+                                .setRequestId(request.getRequestId())
+                                .setSuccess(false)
+                                .setMessage("No valid action specified (create, update, delete, or get)")
+                                .setServerTimestamp(System.currentTimeMillis())
+                                .build();
+                    }
+
+                    // Send response immediately
+                    responseObserver.onNext(response);
+
+                } catch (Exception e) {
+                    log.error("gRPC: ProductUpdates error processing request", e);
+                    ProductUpdateResponse errorResponse = ProductUpdateResponse.newBuilder()
+                            .setRequestId(request.getRequestId())
+                            .setSuccess(false)
+                            .setMessage("Unexpected error: " + e.getMessage())
+                            .setServerTimestamp(System.currentTimeMillis())
+                            .build();
+                    responseObserver.onNext(errorResponse);
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                log.error("gRPC: ProductUpdates stream error", t);
+                responseObserver.onError(Status.INTERNAL
+                        .withDescription("Error in bidirectional stream: " + t.getMessage())
+                        .asException());
+            }
+
+            @Override
+            public void onCompleted() {
+                log.info("gRPC: ProductUpdates stream completed. Total requests processed: {}", requestCount);
+                responseObserver.onCompleted();
+            }
+        };
+    }
+
+    /**
+     * BI-DIRECTIONAL STREAMING RPC: Inventory Sync
+     * Client and server both stream messages
+     * Client sends InventorySyncRequest (inventory changes)
+     * Server responds with InventorySyncResponse confirming the change
+     */
+    @Override
+    public StreamObserver<InventorySyncRequest> inventorySync(
+            StreamObserver<InventorySyncResponse> responseObserver) {
+
+        return new StreamObserver<InventorySyncRequest>() {
+            private int syncCount = 0;
+
+            @Override
+            public void onNext(InventorySyncRequest request) {
+                try {
+                    syncCount++;
+                    log.info("gRPC: InventorySync received request #{} for product: {}, change: {}",
+                            syncCount, request.getProductId(), request.getQuantityChange());
+
+                    if (request.getProductId().isEmpty()) {
+                        InventorySyncResponse response = InventorySyncResponse.newBuilder()
+                                .setProductId("unknown-" + syncCount)
+                                .setSuccess(false)
+                                .setMessage("Product ID cannot be empty")
+                                .setServerTimestamp(System.currentTimeMillis())
+                                .build();
+                        responseObserver.onNext(response);
+                        return;
+                    }
+
+                    try {
+                        // Retrieve the product
+                        Product product = productService.getProductById(request.getProductId());
+                        int previousQuantity = product.getQuantity();
+                        int newQuantity = previousQuantity + request.getQuantityChange();
+
+                        // Validate new quantity
+                        if (newQuantity < 0) {
+                            InventorySyncResponse response = InventorySyncResponse.newBuilder()
+                                    .setProductId(request.getProductId())
+                                    .setPreviousQuantity(previousQuantity)
+                                    .setNewQuantity(previousQuantity)
+                                    .setSuccess(false)
+                                    .setMessage("Quantity change would result in negative inventory. " +
+                                            "Current: " + previousQuantity + ", Change: " + request.getQuantityChange())
+                                    .setServerTimestamp(System.currentTimeMillis())
+                                    .build();
+                            responseObserver.onNext(response);
+                            return;
+                        }
+
+                        // Update inventory
+                        product.setQuantity(newQuantity);
+                        product.setUpdatedAt(System.currentTimeMillis());
+                        productService.createProduct(product);
+
+                        InventorySyncResponse response = InventorySyncResponse.newBuilder()
+                                .setProductId(request.getProductId())
+                                .setPreviousQuantity(previousQuantity)
+                                .setNewQuantity(newQuantity)
+                                .setSuccess(true)
+                                .setMessage("Inventory updated successfully. Reason: " + request.getReason())
+                                .setServerTimestamp(System.currentTimeMillis())
+                                .build();
+
+                        responseObserver.onNext(response);
+                        log.debug("gRPC: InventorySync - Updated inventory for product {} from {} to {} (reason: {})",
+                                request.getProductId(), previousQuantity, newQuantity, request.getReason());
+
+                    } catch (ProductNotFoundException e) {
+                        InventorySyncResponse response = InventorySyncResponse.newBuilder()
+                                .setProductId(request.getProductId())
+                                .setSuccess(false)
+                                .setMessage("Product not found: " + e.getMessage())
+                                .setServerTimestamp(System.currentTimeMillis())
+                                .build();
+                        responseObserver.onNext(response);
+                        log.warn("gRPC: InventorySync - Product not found: {}", request.getProductId());
+
+                    } catch (Exception e) {
+                        InventorySyncResponse response = InventorySyncResponse.newBuilder()
+                                .setProductId(request.getProductId())
+                                .setSuccess(false)
+                                .setMessage("Error updating inventory: " + e.getMessage())
+                                .setServerTimestamp(System.currentTimeMillis())
+                                .build();
+                        responseObserver.onNext(response);
+                        log.error("gRPC: InventorySync - Error processing request", e);
+                    }
+
+                } catch (Exception e) {
+                    log.error("gRPC: InventorySync unexpected error", e);
+                    InventorySyncResponse errorResponse = InventorySyncResponse.newBuilder()
+                            .setProductId(request.getProductId())
+                            .setSuccess(false)
+                            .setMessage("Unexpected error: " + e.getMessage())
+                            .setServerTimestamp(System.currentTimeMillis())
+                            .build();
+                    responseObserver.onNext(errorResponse);
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                log.error("gRPC: InventorySync stream error", t);
+                responseObserver.onError(Status.INTERNAL
+                        .withDescription("Error in bidirectional stream: " + t.getMessage())
+                        .asException());
+            }
+
+            @Override
+            public void onCompleted() {
+                log.info("gRPC: InventorySync stream completed. Total sync requests processed: {}", syncCount);
+                responseObserver.onCompleted();
+            }
+        };
+    }
 }
 
